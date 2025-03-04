@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from starlette.background import BackgroundTask
 
-from open_webui.models.models import Models
+from open_webui.models.models import Models, ModelForm, ModelParams, ModelMeta
 from open_webui.config import (
     CACHE_DIR,
 )
@@ -426,6 +426,37 @@ async def get_all_models(request: Request, user: UserModel) -> dict[str, list]:
 
     models = {"data": merge_models_lists(map(extract_data, responses))}
     log.debug(f"models: {models}")
+
+    # Add new models to the model table, if they don't already exist
+    for model in models["data"]:
+        model_id = model["id"]
+        existing_model = Models.get_model_by_id(model_id)
+        if not existing_model:
+            try:
+                new_model = ModelForm(
+                    id=model_id,
+                    name=model.get("name", model_id),
+                    base_model_id=None,
+                    params=ModelParams(),
+                    meta=ModelMeta(
+                        profile_image_url="/static/favicon.png",
+                        description="",
+                        capabilities={
+                            "vision": True,
+                            "citations": True,
+                        },
+                    ),
+                    access_control={},  
+                    is_active=True,
+                )
+                
+                Models.insert_new_model(
+                    new_model, "system"
+                )  
+                log.info(f"Added new model to database: {model_id}")
+            except Exception as e:
+                log.error(f"Error adding model {model_id} to database: {str(e)}")
+                continue
 
     request.app.state.OPENAI_MODELS = {model["id"]: model for model in models["data"]}
     return models
